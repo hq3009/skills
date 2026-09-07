@@ -6,15 +6,15 @@
 用法：
     python scripts/fill_docx_review.py --md <最终稿.md 或 报告工作目录> [--template <底本.docx>] [--out <输出.docx>]
 
---md 传目录时，自动选用该目录下版本号最大的 评审意见_NNN.md（没有版本文件时回退到 评审意见.md）。
-输出默认命名为 评审意见表_<当天日期>.docx（与 md 同目录），表示"更新日期"；同一天再次生成会覆盖当天文件，
-如需保留可用 --out 另行命名。Markdown 侧的版本流水号（_001/_002）不用于 word 文件名。
+--md 传目录时，自动选用该目录下日期最新的 评审意见_YYYY-MM-DD.md（没有时回退到 评审意见.md）。
+Markdown 定稿与 word 输出统一按生成当天日期命名。输出默认命名为 评审意见表_<当天日期>.docx（与 md 同目录），
+表示"更新日期"；同一天再次生成会覆盖当天文件，如需保留可用 --out 另行命名。
 
 说明：
 - 底本默认取本 skill 的 assets/三问三看模板.docx（只读，不修改）。若要在上一版 word 基础上更新，
   用 --template 指定旧版文件（如 评审意见表_2026-09-01.docx，改名前的 评审意见_2026-09-01.docx 亦可）：此时结论勾选会先复位再按新 md 勾选，
   md 中未提供的字段则沿用旧版原值。
-- "评审意见"大栏 <- "## 评审意见概要"的全部条目（保留 1. 2. 3. 编号，每条一段）。
+- "评审意见"大栏 <- "## 评审意见概要"的总体意见段（不编号、一段）与全部编号条目（保留 1. 2. 3. 编号，每条一段）。
 - "评审要点"表"评审意见"列 <- 三问三看三查三核 12 个子项的判断文字；尊重模板原有合并单元格：
   三问(3 行)、三核(3 行)整组一格；三看/三查前两行一格、第三行单独一格。各子项文字按行顺序分段写入。
 - 项目基本信息（项目名称/项目编码/预算部门/实施单位/资金总需求/事前评估周期）、
@@ -109,8 +109,9 @@ def _join_lines(lines):
 def parse_md(md_text):
     """返回 (summary_items, body_by_title, fields)。
 
-    summary_items: 评审意见概要的条目文本列表（保留原编号前缀，如 "1. …"）。
-    body_by_title: {二级指标标题: 该子项判断文字}，文字保留组内编号（如 "① …"）。
+    summary_items: 评审意见概要的内容段落列表：先为开头的总体意见段（无编号，可能缺省），
+                  再为编号条目（保留原编号前缀，如 "1. …"）。
+    body_by_title: {二级指标标题: 该子项判断文字}，文字保留组内编号（如 "1. …"）。
     fields: {项目基本信息字段名: 取值}，含评审结论与核定入库金额。
     """
     lines = md_text.splitlines()
@@ -126,21 +127,29 @@ def parse_md(md_text):
     sum_start = find_section(SECTION_SUMMARY)
     table_start = find_section(SECTION_TABLE)
 
-    # ---- 概要条目 ----
+    # ---- 概要内容：开头不编号的总体意见段 + 编号条目 ----
     summary_items = []
     if sum_start >= 0:
         end = table_start if table_start > sum_start else len(lines)
         cur = None
+        overall_lines = []
+        items_found = False
         for ln in lines[sum_start + 1:end]:
             if not ln.strip():
                 continue
             m = re.match(r"^\s*(\d+)\s*[.．、]\s*(.*)$", ln)
             if m:
+                items_found = True
                 cur = m.group(2).strip()
                 summary_items.append("%s. %s" % (m.group(1), cur))
             elif cur is not None:
                 cur += re.sub(r"^>\s?", "", ln.strip())
-        # 兜底：概要为一段不编号文字时（如新版“精减为一段”的写法），整段作为一条写入
+            elif not items_found:
+                # 编号条目之前的无编号段落视为开头的总体意见段
+                overall_lines.append(re.sub(r"^>\s?", "", ln.strip()))
+        if overall_lines:
+            summary_items.insert(0, "".join(overall_lines).strip())
+        # 兜底：概要为一段不编号文字时，整段作为一条写入
         if not summary_items:
             joined = _join_lines(lines[sum_start + 1:end])
             if joined:
@@ -411,15 +420,15 @@ def fill_document(root, summary_items, body_by_title, fields, notes):
 # ---------------- 入口 ----------------
 
 def pick_latest_md(directory):
-    """在目录中选取版本号最大的 评审意见_NNN.md；没有版本文件时回退到 评审意见.md。"""
-    best, best_n, fallback = None, -1, None
+    """在目录中选取生成日期最新的 评审意见_YYYY-MM-DD.md；没有时回退到 评审意见.md。"""
+    best, best_date, fallback = None, "", None
     for root, _dirs, files in os.walk(directory):
         for fn in files:
-            m = re.match(r"^评审意见_(\d+)\.md$", fn)
+            m = re.match(r"^评审意见_(\d{4}-\d{2}-\d{2})\.md$", fn)
             if m:
-                n = int(m.group(1))
-                if n > best_n:
-                    best_n, best = n, os.path.join(root, fn)
+                d = m.group(1)
+                if d > best_date:
+                    best_date, best = d, os.path.join(root, fn)
             elif fn == "评审意见.md":
                 fallback = os.path.join(root, fn)
     return best or fallback
@@ -430,7 +439,7 @@ def main():
     default_template = os.path.join(here, "..", "assets", "三问三看模板.docx")
 
     ap = argparse.ArgumentParser(description="将评审意见最终稿 md 回填到官方 word 评审表")
-    ap.add_argument("--md", required=True, help="评审意见最终稿 Markdown 文件路径；也可传目录，自动选用其中版本号最大的评审意见")
+    ap.add_argument("--md", required=True, help="评审意见最终稿 Markdown 文件路径；也可传目录，自动选用其中日期最新的评审意见")
     ap.add_argument("--out", default=None, help="输出 docx 路径（默认：与 md 同目录的 评审意见表_<当天日期>.docx）")
     ap.add_argument("--template", default=default_template, help="底本 docx：默认使用空白模板 assets/三问三看模板.docx；"
                                                                  "也可指定上一版 word（如 评审意见表_2026-09-01.docx）作为底本在其基础上更新")
@@ -439,13 +448,13 @@ def main():
     md_path = os.path.abspath(args.md)
     tpl_path = os.path.abspath(args.template)
 
-    # --md 传目录时，自动选用版本号最大的评审意见
+    # --md 传目录时，自动选用日期最新的评审意见
     if os.path.isdir(md_path):
         picked = pick_latest_md(md_path)
         if not picked:
-            eprint("目录中未找到评审意见 Markdown（评审意见_NNN.md 或 评审意见.md）：%s" % md_path)
+            eprint("目录中未找到评审意见 Markdown（评审意见_YYYY-MM-DD.md 或 评审意见.md）：%s" % md_path)
             sys.exit(1)
-        print("自动选用最新版本：%s" % picked)
+        print("自动选用日期最新的定稿：%s" % picked)
         md_path = picked
 
     # 输出默认命名：与 md 同目录的 评审意见表_<当天日期>.docx

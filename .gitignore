@@ -1,0 +1,20 @@
+# ================= Python =================
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# ================= Editor / IDE / OS =================
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ================= Temporary Files =================
+~$*.docx
+~$*.doc
+~$*.ppt*

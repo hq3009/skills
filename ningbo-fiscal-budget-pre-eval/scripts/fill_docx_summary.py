@@ -5,13 +5,13 @@
 用法：
     python scripts/fill_docx_summary.py --md <定稿.md 或 项目目录> [--template <底本.docx>] [--out <输出.docx>]
 
---md 传目录时，自动选用该目录下版本号最大的 评审意见_NNN.md（没有版本文件时回退到 评审意见.md）。
+--md 传目录时，自动选用该目录下日期最新的 评审意见_YYYY-MM-DD.md（没有时回退到 评审意见.md）。
 输出默认命名为 评审意见概要_<当天日期>.docx（与 md 同目录）；同一天再次生成会覆盖当天文件，
 如需保留可用 --out 另行命名。
 
 生成的文档内容：
 - 标题段：<实施单位>-<项目名称>-评审意见（套用模板 heading 1 样式）
-- 正文：md "## 评审意见概要" 的全部条目，一条一段，保留 1. 2. 3. 编号
+- 正文：md "## 评审意见概要" 的全部内容——总体意见段（不编号）与编号条目，一条一段，条目保留 1. 2. 3. 编号
 
 样式约束：只写文本，**不新建、不修改任何样式定义，不改页面设置**，
 标题与正文段落均复制模板原有空段落的段落属性，格式完全由模板决定。
@@ -130,7 +130,7 @@ def main():
     default_template = os.path.join(here, "..", "assets", DEFAULT_TEMPLATE)
 
     ap = argparse.ArgumentParser(description="由定稿评审意见 md 生成评审意见概要 word 文档")
-    ap.add_argument("--md", required=True, help="评审意见定稿 Markdown 文件路径；也可传目录，自动选用其中版本号最大的评审意见")
+    ap.add_argument("--md", required=True, help="评审意见定稿 Markdown 文件路径；也可传目录，自动选用其中日期最新的评审意见")
     ap.add_argument("--out", default=None, help="输出 docx 路径（默认：与 md 同目录的 评审意见概要_<当天日期>.docx）")
     ap.add_argument("--template", default=default_template, help="底本 docx：默认使用 assets/%s（只读，不修改）" % DEFAULT_TEMPLATE)
     args = ap.parse_args()
@@ -138,13 +138,13 @@ def main():
     md_path = os.path.abspath(args.md)
     tpl_path = os.path.abspath(args.template)
 
-    # --md 传目录时，自动选用版本号最大的评审意见
+    # --md 传目录时，自动选用日期最新的评审意见
     if os.path.isdir(md_path):
         picked = pick_latest_md(md_path)
         if not picked:
-            eprint("目录中未找到评审意见 Markdown（评审意见_NNN.md 或 评审意见.md）：%s" % md_path)
+            eprint("目录中未找到评审意见 Markdown（评审意见_YYYY-MM-DD.md 或 评审意见.md）：%s" % md_path)
             sys.exit(1)
-        print("自动选用最新版本：%s" % picked)
+        print("自动选用日期最新的定稿：%s" % picked)
         md_path = picked
 
     # 输出默认命名：与 md 同目录的 评审意见概要_<当天日期>.docx
