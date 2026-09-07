@@ -140,6 +140,11 @@ def parse_md(md_text):
                 summary_items.append("%s. %s" % (m.group(1), cur))
             elif cur is not None:
                 cur += re.sub(r"^>\s?", "", ln.strip())
+        # 兜底：概要为一段不编号文字时（如新版“精减为一段”的写法），整段作为一条写入
+        if not summary_items:
+            joined = _join_lines(lines[sum_start + 1:end])
+            if joined:
+                summary_items.append(joined)
 
     # ---- 三问三看三查三核 12 个子项 ----
     body_by_title = {}
