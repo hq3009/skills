@@ -8,7 +8,10 @@ dist/
 # ================= Editor / IDE / OS =================
 .idea/
 .vscode/
+.cursor
 *.swp
+.workbuddy
+.codebuddy
 *~
 .DS_Store
 Thumbs.db
