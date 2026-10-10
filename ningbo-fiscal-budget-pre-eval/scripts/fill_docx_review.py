@@ -53,6 +53,8 @@ SUBTITLES = [
 
 SECTION_SUMMARY = "评审意见概要"
 SECTION_TABLE = "三问三看三查三核"
+# 三问三看三查三核独立文件（按需生成，不带日期后缀）
+SECTIONS_FILE = "三问三看三查三核.md"
 SECTION_BASIC = "项目基本信息"
 
 # 基本信息区可自动填写的字段（字段名 -> 值写入该字段标签后的空单元格）
@@ -106,6 +108,41 @@ def _join_lines(lines):
     return "".join(out)
 
 
+def parse_body(lines):
+    """从行序列中解析三问三看三查三核子项，返回 {二级指标标题: 判断文字}。"""
+    cur_title = None
+    buf = []
+    body_by_title = {}
+    for ln in lines:
+        m = re.match(r"^#{2,5}\s+(.*?)\s*$", ln.strip())
+        if m:
+            if cur_title is not None:
+                body_by_title[cur_title] = _join_lines(buf)
+            cur_title = clean(m.group(1))
+            buf = []
+        elif cur_title is not None:
+            buf.append(ln)
+    if cur_title is not None:
+        body_by_title[cur_title] = _join_lines(buf)
+    return body_by_title
+
+
+def parse_sections_md(md_text):
+    """解析独立的《三问三看三查三核.md》，返回 {二级指标标题: 判断文字}。
+
+    顶层标题可为"# <项目名称>三问三看三查三核"或"## 三问三看三查三核"；
+    若未匹配到顶层标题，则整篇按组/二级指标解析。
+    """
+    lines = md_text.splitlines()
+    start = 0
+    for i, ln in enumerate(lines):
+        m = re.match(r"^#{1,3}\s+(.*?)\s*$", ln.strip())
+        if m and clean(SECTION_TABLE) in clean(m.group(1)):
+            start = i + 1
+            break
+    return parse_body(lines[start:])
+
+
 def parse_md(md_text):
     """返回 (summary_items, body_by_title, fields)。
 
@@ -155,22 +192,10 @@ def parse_md(md_text):
             if joined:
                 summary_items.append(joined)
 
-    # ---- 三问三看三查三核 12 个子项 ----
+    # ---- 三问三看三查三核 12 个子项（评审意见 md 中通常已不含此节，由独立文件补充）----
     body_by_title = {}
     if table_start >= 0:
-        cur_title = None
-        buf = []
-        for ln in lines[table_start + 1:]:
-            m = re.match(r"^#{2,5}\s+(.*?)\s*$", ln.strip())
-            if m:
-                if cur_title is not None:
-                    body_by_title[cur_title] = _join_lines(buf)
-                cur_title = clean(m.group(1))
-                buf = []
-            elif cur_title is not None:
-                buf.append(ln)
-        if cur_title is not None:
-            body_by_title[cur_title] = _join_lines(buf)
+        body_by_title = parse_body(lines[table_start + 1:])
 
     # ---- 项目基本信息（含评审结论、核定入库金额）----
     fields = {}
@@ -436,13 +461,14 @@ def pick_latest_md(directory):
 
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
-    default_template = os.path.join(here, "..", "assets", "三问三看模板.docx")
+    default_template = os.path.join(here, "..", "assets", "评审意见表模板.docx")
 
     ap = argparse.ArgumentParser(description="将评审意见最终稿 md 回填到官方 word 评审表")
     ap.add_argument("--md", required=True, help="评审意见最终稿 Markdown 文件路径；也可传目录，自动选用其中日期最新的评审意见")
     ap.add_argument("--out", default=None, help="输出 docx 路径（默认：与 md 同目录的 评审意见表_<当天日期>.docx）")
-    ap.add_argument("--template", default=default_template, help="底本 docx：默认使用空白模板 assets/三问三看模板.docx；"
+    ap.add_argument("--template", default=default_template, help="底本 docx：默认使用空白模板 assets/评审意见表模板.docx；"
                                                                  "也可指定上一版 word（如 评审意见表_2026-09-01.docx）作为底本在其基础上更新")
+    ap.add_argument("--sections", default=None, help="三问三看三查三核 Markdown 路径（默认：与 md 同目录的 三问三看三查三核.md）")
     args = ap.parse_args()
 
     md_path = os.path.abspath(args.md)
@@ -479,6 +505,25 @@ def main():
         md_text = f.read()
 
     summary_items, body_by_title, fields = parse_md(md_text)
+
+    # 三问三看三查三核默认不再随评审意见 md 生成，改为从独立文件读取
+    sections_path = os.path.abspath(args.sections) if args.sections else None
+    if sections_path and not os.path.isfile(sections_path):
+        eprint("找不到三问三看三查三核文件：%s" % sections_path)
+        sys.exit(1)
+    if not sections_path:
+        cand = os.path.join(os.path.dirname(md_path), SECTIONS_FILE)
+        sections_path = cand if os.path.isfile(cand) else None
+
+    if not body_by_title:
+        if sections_path:
+            with open(sections_path, encoding="utf-8") as f:
+                body_by_title = parse_sections_md(f.read())
+            print("三问三看三查三核取自：%s" % sections_path)
+        else:
+            eprint("提示：评审意见 md 中无三问三看三查三核，同目录也未找到 %s；" % SECTIONS_FILE)
+            eprint("      word“评审要点”表的 12 个子项将保持原样（如需填写，请先生成该文件）。")
+
     missing = [t for t in SUBTITLES if not body_by_title.get(t)]
     if missing:
         eprint("提示：以下二级指标在 md 中未找到对应正文（这些行将保持空白）：")
