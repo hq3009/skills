@@ -1,0 +1,6 @@
+[submodule "vendor-skills/paper-deep-reader-skill"]
+	path = vendor-skills/paper-deep-reader-skill
+	url = https://github.com/Linwei-Chen/paper-deep-reader-skill.git
+[submodule "vendor-skills/dailypaper-skills"]
+	path = vendor-skills/dailypaper-skills
+	url = https://github.com/huangkiki/dailypaper-skills.git
